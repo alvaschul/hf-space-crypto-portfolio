@@ -114,11 +114,15 @@
   <script>
     const COINGECKO_SIMPLE = 'https://api.coingecko.com/api/v3/simple/price';
     const DEFAULT_IDS = ['bitcoin','ethereum','binancecoin','ripple','solana','cardano','dogecoin','polkadot','tron','chainlink'];
+    const SYMBOLS = {
+      bitcoin: 'BTC', ethereum: 'ETH', binancecoin: 'BNB', ripple: 'XRP',
+      solana: 'SOL', cardano: 'ADA', dogecoin: 'DOGE', polkadot: 'DOT',
+      tron: 'TRX', chainlink: 'LINK'
+    };
     let market = {};
 
     async function fetchPrices() {
       const ids = DEFAULT_IDS.join(',');
-      const currencies = 'usd';
       const vs = 'usd';
       const res = await fetch(`${COINGECKO_SIMPLE}?ids=${encodeURIComponent(ids)}&vs_currencies=${encodeURIComponent(vs)}&include_24hr_change=true`);
       if (!res.ok) throw new Error('price fetch failed');
@@ -137,15 +141,13 @@
       grid.innerHTML = '';
       for (const id of DEFAULT_IDS) {
         const coin = market[id];
-        if (!coin) continue;
-        const change = coin.usd_24h_change ?? 0;
+        const change = coin?.usd_24h_change ?? 0;
         const up = change >= 0;
         const card = document.createElement('div');
         card.className = 'card';
         card.innerHTML = `
-          <div class="coin-name">${id}</div>
-          <div class="coin-symbol">${id.toUpperCase()}</div>
-          <div class="price">$${fmt(coin.usd)}</div>
+          <div class="coin-name">${SYMBOLS[id] || id.toUpperCase()} <span class="coin-symbol">${id}</span></div>
+          <div class="price">${coin ? '$' + fmt(coin.usd) : '—'}</div>
           <div class="change ${up ? 'up' : 'down'}">${up ? '▲' : '▼'} ${fmt(Math.abs(change))}%</div>
         `;
         grid.appendChild(card);
@@ -173,7 +175,7 @@
         total += value || 0;
         const tr = document.createElement('tr');
         tr.innerHTML = `
-          <td>${item.id.toUpperCase()}</td>
+          <td>${(SYMBOLS[item.id] || item.id.toUpperCase())} <span class="coin-symbol">${item.id}</span></td>
           <td>${fmt(item.amount, 6)}</td>
           <td>${price != null ? '$' + fmt(price) : '—'}</td>
           <td>${value != null ? '$' + fmt(value) : '—'}</td>
@@ -215,13 +217,17 @@
       DEFAULT_IDS.forEach(id => {
         const opt = document.createElement('option');
         opt.value = id;
-        opt.textContent = id.toUpperCase();
+        opt.textContent = SYMBOLS[id] || id.toUpperCase();
         sel.appendChild(opt);
       });
       fetchPrices().catch(() => {
         document.getElementById('lastUpdated').textContent = 'Update failed';
       });
-      setInterval(fetchPrices, 60000);
+      setInterval(() => {
+        fetchPrices().catch(() => {
+          document.getElementById('lastUpdated').textContent = 'Update failed';
+        });
+      }, 60000);
     })();
   </script>
 </body>
