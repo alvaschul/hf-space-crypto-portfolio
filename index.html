@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Crypto Dashboard + Portfolio</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #181b21;
+      --panel-2: #1f232b;
+      --text: #e6e8ee;
+      --muted: #9aa0ac;
+      --accent: #7c6ff7;
+      --up: #22c55e;
+      --down: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px;
+    }
+    .container { max-width: 1100px; margin: 0 auto; }
+    header { margin-bottom: 20px; }
+    h1 { margin: 0 0 6px; font-size: 22px; }
+    .sub { color: var(--muted); font-size: 13px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top: 18px; }
+    .card {
+      background: var(--panel);
+      border: 1px solid #2a2f38;
+      border-radius: 16px;
+      padding: 16px;
+    }
+    .coin-name { font-weight: 700; font-size: 16px; }
+    .coin-symbol { color: var(--muted); font-size: 12px; }
+    .price { margin-top: 8px; font-size: 18px; font-weight: 700; }
+    .change { font-size: 12px; margin-top: 4px; }
+    .up { color: var(--up); }
+    .down { color: var(--down); }
+
+    .section { margin-top: 24px; }
+    .section h2 { font-size: 16px; margin: 0 0 10px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+    input, select, button {
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid #2a2f38;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 14px;
+    }
+    button { background: var(--accent); border: none; cursor: pointer; }
+    button.secondary { background: #2a2f38; color: var(--text); }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #252a33; font-size: 14px; }
+    th { color: var(--muted); font-weight: 600; font-size: 12px; }
+    .muted { color: var(--muted); }
+    .kpi { font-weight: 700; }
+    .actions { display:flex; gap:8px; }
+    .pill { display:inline-block; padding: 4px 10px; border-radius: 999px; background: var(--panel-2); font-size: 12px; color: var(--muted); }
+    .footer { margin-top: 28px; color: var(--muted); font-size: 12px; }
+    .empty { color: var(--muted); font-size: 13px; padding: 10px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Crypto Dashboard + Portfolio</h1>
+      <div class="sub">Live prices via CoinGecko • Portfolio saved locally in your browser</div>
+    </header>
+
+    <section class="section">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2>Market Overview</h2>
+        <div class="pill" id="lastUpdated">updating…</div>
+      </div>
+      <div class="grid" id="marketGrid"></div>
+    </section>
+
+    <section class="section">
+      <h2>Portfolio</h2>
+      <div class="row">
+        <select id="coinSelect"></select>
+        <input id="amount" type="number" step="any" min="0" placeholder="Amount" />
+        <button id="addBtn">Add / Update</button>
+        <button id="clearBtn" class="secondary">Clear All</button>
+      </div>
+      <div style="overflow:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Coin</th>
+              <th>Amount</th>
+              <th>Price (USD)</th>
+              <th>Value (USD)</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="portfolioBody"></tbody>
+        </table>
+        <div id="portfolioEmpty" class="empty">No holdings yet. Add one above.</div>
+      </div>
+      <div style="margin-top:10px; font-size:14px;">
+        Total portfolio value: <span class="kpi" id="totalValue">$0.00</span>
+      </div>
+    </section>
+
+    <div class="footer">This page runs as a static Space and uses public CoinGecko endpoints. If the API rate-limits, wait a bit and refresh.</div>
+  </div>
+
+  <script>
+    const COINGECKO_SIMPLE = 'https://api.coingecko.com/api/v3/simple/price';
+    const DEFAULT_IDS = ['bitcoin','ethereum','binancecoin','ripple','solana','cardano','dogecoin','polkadot','tron','chainlink'];
+    let market = {};
+
+    async function fetchPrices() {
+      const ids = DEFAULT_IDS.join(',');
+      const currencies = 'usd';
+      const vs = 'usd';
+      const res = await fetch(`${COINGECKO_SIMPLE}?ids=${encodeURIComponent(ids)}&vs_currencies=${encodeURIComponent(vs)}&include_24hr_change=true`);
+      if (!res.ok) throw new Error('price fetch failed');
+      market = await res.json();
+      renderMarket();
+      renderPortfolio();
+    }
+
+    function fmt(n, decimals=2) {
+      if (n == null || isNaN(n)) return '—';
+      return Number(n).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    }
+
+    function renderMarket() {
+      const grid = document.getElementById('marketGrid');
+      grid.innerHTML = '';
+      for (const id of DEFAULT_IDS) {
+        const coin = market[id];
+        if (!coin) continue;
+        const change = coin.usd_24h_change ?? 0;
+        const up = change >= 0;
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `
+          <div class="coin-name">${id}</div>
+          <div class="coin-symbol">${id.toUpperCase()}</div>
+          <div class="price">$${fmt(coin.usd)}</div>
+          <div class="change ${up ? 'up' : 'down'}">${up ? '▲' : '▼'} ${fmt(Math.abs(change))}%</div>
+        `;
+        grid.appendChild(card);
+      }
+      document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    }
+
+    function loadPortfolio() {
+      try { return JSON.parse(localStorage.getItem('portfolio') || '[]'); } catch { return []; }
+    }
+    function savePortfolio(items) { localStorage.setItem('portfolio', JSON.stringify(items)); }
+
+    function renderPortfolio() {
+      const items = loadPortfolio();
+      const tbody = document.getElementById('portfolioBody');
+      const empty = document.getElementById('portfolioEmpty');
+      const totalEl = document.getElementById('totalValue');
+      tbody.innerHTML = '';
+      let total = 0;
+      if (!items.length) { empty.style.display = 'block'; totalEl.textContent = '$0.00'; return; }
+      empty.style.display = 'none';
+      items.forEach((item, idx) => {
+        const price = market[item.id]?.usd;
+        const value = price != null ? price * item.amount : null;
+        total += value || 0;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${item.id.toUpperCase()}</td>
+          <td>${fmt(item.amount, 6)}</td>
+          <td>${price != null ? '$' + fmt(price) : '—'}</td>
+          <td>${value != null ? '$' + fmt(value) : '—'}</td>
+          <td><button class="secondary" data-remove="${idx}">Remove</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+      totalEl.textContent = '$' + fmt(total);
+    }
+
+    document.getElementById('addBtn').addEventListener('click', () => {
+      const id = document.getElementById('coinSelect').value.trim().toLowerCase();
+      const amount = parseFloat(document.getElementById('amount').value);
+      if (!id || isNaN(amount) || amount <= 0) return;
+      const items = loadPortfolio();
+      const existing = items.find(x => x.id === id);
+      if (existing) existing.amount = amount; else items.push({ id, amount });
+      savePortfolio(items);
+      document.getElementById('amount').value = '';
+      renderPortfolio();
+    });
+
+    document.getElementById('portfolioBody').addEventListener('click', (e) => {
+      if (e.target.matches('button[data-remove]')) {
+        const idx = parseInt(e.target.getAttribute('data-remove'), 10);
+        const items = loadPortfolio().filter((_, i) => i !== idx);
+        savePortfolio(items);
+        renderPortfolio();
+      }
+    });
+
+    document.getElementById('clearBtn').addEventListener('click', () => {
+      savePortfolio([]);
+      renderPortfolio();
+    });
+
+    (function init() {
+      const sel = document.getElementById('coinSelect');
+      DEFAULT_IDS.forEach(id => {
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = id.toUpperCase();
+        sel.appendChild(opt);
+      });
+      fetchPrices().catch(() => {
+        document.getElementById('lastUpdated').textContent = 'Update failed';
+      });
+      setInterval(fetchPrices, 60000);
+    })();
+  </script>
+</body>
+</html>
